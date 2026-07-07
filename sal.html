@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>러닝 챌린지: 디저트를 피하라!</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Pretendard', sans-serif; background: #f0fdf4; touch-action: manipulation; }
+        #game-canvas { border-bottom: 4px solid #374151; background: white; }
+        .toast { transition: opacity 0.5s ease-in-out; }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-4">
+
+    <div id="start-screen" class="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-sm text-center">
+        <h1 class="text-3xl font-bold text-green-600 mb-6">러닝 챌린지</h1>
+        <input type="text" id="nickname" placeholder="닉네임을 입력하세요" class="w-full p-3 border rounded-xl mb-4 focus:outline-none focus:ring-2 focus:ring-green-400">
+        
+        <label class="block text-sm font-semibold mb-2">난이도 선택 (레벨 4-8)</label>
+        <select id="level" class="w-full p-3 border rounded-xl mb-6">
+            <option value="4">레벨 4 (초급)</option>
+            <option value="5">레벨 5</option>
+            <option value="6">레벨 6</option>
+            <option value="7">레벨 7</option>
+            <option value="8">레벨 8 (고급)</option>
+        </select>
+        
+        <button onclick="startGame()" class="w-full bg-green-500 text-white py-4 rounded-xl font-bold hover:bg-green-600 transition">게임 시작하기</button>
+    </div>
+
+    <div id="game-screen" class="hidden bg-white p-6 rounded-3xl shadow-2xl w-full max-w-md relative">
+        <div id="message-toast" class="hidden absolute top-4 left-0 w-full px-4 z-20 pointer-events-none">
+            <div class="bg-green-500 text-white text-center py-2 px-4 rounded-full shadow-lg font-bold text-sm">
+                <span id="cheer-text"></span>
+            </div>
+        </div>
+
+        <div class="flex justify-between mb-2 text-sm font-bold text-gray-600">
+            <div>거리: <span id="dist-count">0</span>m</div>
+            <div>칼로리: <span id="calorie-count">0</span>kcal</div>
+            <div>목숨: <span id="life-count" class="text-red-500"></span></div>
+        </div>
+        <div class="text-center text-xs text-gray-400 mb-2">시간: <span id="timer">00:00</span></div>
+
+        <canvas id="game-canvas" width="400" height="200" class="w-full rounded-2xl mb-4"></canvas>
+
+        <button id="jump-btn" class="w-full bg-blue-500 text-white py-6 rounded-2xl font-bold text-xl shadow-lg hover:bg-blue-600 active:scale-95 transition">점프!</button>
+        <script>
+        let nickname = "";
+        let level = 4;
+        let distance = 0;
+        let calories = 0;
+        let time = 0;
+        let lives = 5;
+        let gameActive = false;
+        let timerInterval;
+        let invulnerable = false; // 무적 시간 (피격 시)
+
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 캐릭터를 오른쪽에 배치 (facing left)
+        let runner = { x: 320, y: 150, w: 30, h: 30, vy: 0, gravity: 0.8, jump: -12, onGround: true };
+        let obstacles = [];
+        let frameCount = 0;
+        let gameSpeed = 3; // 기본 속도 하향
+        const obstacleTypes = ['🍫', '🍬', '🍰'];
+
+        const messages = ["잘한다!", "살 엄청 빠진다!", "턱선 갸름한 것봐!!", "오늘 1키로는 빠졌음.", "페이스가 아주 좋아요!", "땀방울이 빛나네요!"];
+
+        function startGame() {
+            nickname = document.getElementById('nickname').value || "사용자";
+            level = parseInt(document.getElementById('level').value);
+            // 난이도에 따른 속도 증가폭 감소
+            gameSpeed = 3 + (level - 4) * 0.5;
+
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            
+            updateLivesUI(); // 시작 시 하트 5개 표시
+            gameActive = true;
+            requestAnimationFrame(gameLoop);
+            startTimer();
+            
+            document.getElementById('jump-btn').addEventListener('click', jump);
+        }
+
+        function startTimer() {
+            timerInterval = setInterval(() => {
+                time++;
+                let mins = Math.floor(time / 60).toString().padStart(2, '0');
+                let secs = (time % 60).toString().padStart(2, '0');
+                document.getElementById('timer').innerText = `${mins}:${secs}`;
+            }, 1000);
+        }
+
+        function jump() {
+            if (runner.onGround) {
+                runner.vy = runner.jump;
+                runner.onGround = false;
+            }
+        }
+
+        function gameLoop() {
+            if (!gameActive) return;
+
+            runner.vy += runner.gravity;
+            runner.y += runner.vy;
+            if (runner.y > 150) {
+                runner.y = 150;
+                runner.vy = 0;
+                runner.onGround = true;
+            }
+
+            // 장애물 생성 (왼쪽에서 생성되어 오른쪽으로)
+            if (frameCount % Math.floor(100 - level * 5) === 0) {
+                obstacles.push({ x: 0, y: 165, type: obstacleTypes[Math.floor(Math.random() * obstacleTypes.length)] });
+            }
+
+            distance += 1;
+            calories = (distance * 0.05).toFixed(1);
+            document.getElementById('dist-count').innerText = Math.floor(distance / 10); // 거리 단위를 조금 더 크게 표시
+            document.getElementById('calorie-count').innerText = calories;
+
+            // 응원 메시지: 거리 기준을 조정하여 조금 더 명확하게 노출 (500단위마다)
+            if (distance > 0 && distance % 500 === 0) showEncouragement();
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 바닥
+            ctx.fillStyle = '#e5e7eb';
+            ctx.fillRect(0, 190, 400, 10);
+
+            // 캐릭터
+            ctx.font = "30px Arial";
+            ctx.fillText("🏃", runner.x, runner.y + 25);
+
+            // 장애물 이동 및 충돌
+            for (let i = 0; i < obstacles.length; i++) {
+                obstacles[i].x += gameSpeed; // 오른쪽으로 이동
+                ctx.font = "25px Arial";
+                ctx.fillText(obstacles[i].type, obstacles[i].x, obstacles[i].y);
+
+                // 충돌 체크
+                if (!invulnerable && obstacles[i].x > runner.x - 20 && obstacles[i].x < runner.x + 20 && runner.y > 120) {
+                    takeDamage();
+                }
+            }
+
+            obstacles = obstacles.filter(o => o.x < 420);
+            frameCount++;
+            requestAnimationFrame(gameLoop);
+        }
+
+        function takeDamage() {
+            lives--;
+            updateLivesUI();
+            if (lives <= 0) {
+                gameOver();
+            } else {
+                invulnerable = true;
+                setTimeout(() => invulnerable = false, 1000);
+            }
+        }
+
+        function updateLivesUI() {
+            const lifeEl = document.getElementById('life-count');
+            lifeEl.innerText = "❤️".repeat(lives);
+        }
+
+        function showEncouragement() {
+            const toast = document.getElementById('message-toast');
+            const cheerText = document.getElementById('cheer-text');
+            const randomMsg = messages[Math.floor(Math.random() * messages.length)];
+            
+            cheerText.innerText = `${nickname}님, ${randomMsg}`;
+            toast.classList.remove('hidden');
+            
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 2000);
+        }
+
+        function gameOver() {
+            gameActive = false;
+            clearInterval(timerInterval);
+            alert(`${nickname}님, 아쉽게도 모든 목숨을 잃었습니다!`);
+            location.reload();
+        }
+    </script>
+</body>
+</html>
